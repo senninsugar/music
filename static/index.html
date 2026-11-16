@@ -821,6 +821,7 @@ let searchSeq = 0;
 let detailSeq = 0;
 let detailTrack = null;
 let detailRelated = [];
+let retryTimer = null;
 
 const fmt = sec => {
   if (sec == null || !Number.isFinite(sec)) return "0:00";
@@ -999,6 +1000,7 @@ $("#mini-next").onclick = e => {
 };
 
 $("#stop").onclick = () => {
+  clearTimeout(retryTimer);
   audio.pause();
   audio.currentTime = 0;
   state.stopped = true;
@@ -1354,9 +1356,19 @@ $("#d-all").onclick = () => {
 
 /* ---------- 再生 ---------- */
 
+// 音声ソースを読み込む。再試行時はキャッシュを避けるためクエリを付ける
+function loadSource(t,attempt = 0) {
+  audio.src = "/stream/" + t.id +
+    (attempt > 0 ? "?r=" + attempt + "&t=" + Date.now() : "");
+  audio.load();
+  audio.play().catch(() => {});
+}
+
 function playIdx(i) {
   const t = state.queue[i];
   if (!t) return;
+
+  clearTimeout(retryTimer);
 
   state.idx = i;
   state.retries = 0;
@@ -1369,12 +1381,7 @@ function playIdx(i) {
   updateTrackUI(t);
   setBuffering(true);
 
-  audio.src = "/stream/" + t.id;
-  audio.load();
-  audio.play().catch(() => {
-    setBuffering(false);
-    updatePlayButton();
-  });
+  loadSource(t);
 
   setMediaSession(t);
   markActive();
@@ -1512,19 +1519,30 @@ function setMediaSession(t) {
   });
 }
 
+// 再生エラー: 時間を置いて最大2回まで再読み込みし、それでも失敗したら止めて理由を表示する
 audio.addEventListener("error",() => {
   const t = state.queue[state.idx];
   if (!t || state.stopped) return;
 
-  if (state.retries < 1) {
+  if (state.retries < 2) {
     state.retries++;
-    audio.src = "/stream/" + t.id;
-    audio.play().catch(() => {});
-  } else {
-    setBuffering(false);
-    setNow(t.title + "（再生エラー）");
-    updatePlayButton();
+    setBuffering(true);
+    setNow(t.title + "（再読み込み中…）");
+
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => {
+      if (state.queue[state.idx]?.id !== t.id || state.stopped) return;
+      loadSource(t,state.retries);
+    },800 * state.retries);
+    return;
   }
+
+  const code = audio.error ? audio.error.code : 0;
+  setBuffering(false);
+  setNow(t.title);
+  $("#player-status").textContent =
+    "再生できませんでした（コード " + code + "）。次の曲を選んでください";
+  updatePlayButton();
 });
 
 /* ---------- 起動 ---------- */
