@@ -5,137 +5,500 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Music</title>
 <style>
-  body { margin:0; font-family: system-ui, sans-serif; background:#111; color:#eee; }
-  header { position:sticky; top:0; background:#111; padding:12px; border-bottom:1px solid #333; z-index:1; }
+  :root { --bg:#111; --panel:#1b1b1b; --line:#333; --text:#eee; --sub:#999; --accent:#e33; --sk:#262626; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  header { position:sticky; top:0; background:var(--bg); padding:12px; border-bottom:1px solid var(--line); z-index:2; }
   form { display:flex; gap:8px; }
-  input { flex:1; padding:10px; border-radius:8px; border:1px solid #444; background:#222; color:#eee; font-size:16px; }
-  button { padding:10px 14px; border-radius:8px; border:0; background:#e33; color:#fff; cursor:pointer; }
-  #status { padding:12px; color:#999; }
-  ul { list-style:none; margin:0; padding:0 0 130px; }
-  li { display:flex; gap:12px; padding:10px 12px; cursor:pointer; align-items:center; }
+  input { flex:1; min-width:0; padding:10px; border-radius:8px; border:1px solid #444; background:#222; color:var(--text); font-size:16px; }
+  button { padding:10px 14px; border-radius:8px; border:0; background:var(--accent); color:#fff; cursor:pointer; font-size:14px; }
+  button.ghost { background:#2a2a2a; }
+  button:disabled { opacity:.5; cursor:default; }
+  .hidden { display:none !important; }
+
+  .status { padding:12px; color:var(--sub); font-size:14px; }
+
+  ul { list-style:none; margin:0; padding:0 0 140px; }
+  li { display:flex; gap:12px; padding:10px 12px; cursor:pointer; align-items:center; transition:background .15s; }
   li:hover, li.active { background:#222; }
-  li img { width:120px; height:68px; object-fit:cover; border-radius:6px; flex:none; background:#333; }
-  .meta { min-width:0; }
+  li.enter { animation:fade .3s ease both; }
+  li img { width:120px; height:68px; object-fit:cover; border-radius:6px; flex:none; background:var(--sk); }
+  .meta { min-width:0; flex:1; }
   .title { font-size:15px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
-  .sub { font-size:12px; color:#999; margin-top:4px; }
-  #player { position:fixed; bottom:0; left:0; right:0; background:#1b1b1b; padding:10px 12px; border-top:1px solid #333; }
-  #now { font-size:14px; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sub { font-size:12px; color:var(--sub); margin-top:4px; }
+  .info-btn { background:none; color:var(--sub); padding:6px 8px; font-size:18px; flex:none; }
+
+  /* 読み込みアニメーション */
+  .sk { background:linear-gradient(90deg, var(--sk) 25%, #3a3a3a 50%, var(--sk) 75%); background-size:200% 100%; animation:shimmer 1.2s infinite linear; border-radius:6px; color:transparent !important; min-height:1em; }
+  .sk-thumb { width:120px; height:68px; flex:none; }
+  @keyframes shimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
+  @keyframes fade { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  .spin { width:18px; height:18px; flex:none; border:2px solid #555; border-top-color:#fff; border-radius:50%; animation:rot .8s linear infinite; }
+  @keyframes rot { to { transform:rotate(360deg); } }
+
+  /* 詳細ページ */
+  .hero { display:flex; gap:16px; padding:12px 16px; flex-wrap:wrap; }
+  .hero img { width:min(100%, 340px); aspect-ratio:16/9; object-fit:cover; border-radius:10px; background:var(--sk); }
+  .hero .info { flex:1; min-width:200px; }
+  .hero h1 { font-size:20px; line-height:1.35; margin:0 0 8px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  .desc { white-space:pre-wrap; font-size:14px; line-height:1.6; color:#ccc; margin:0; padding:0 16px; overflow:hidden; }
+  .desc.collapsed { max-height:6.4em; }
+  .more { margin:8px 16px; }
+  h2 { font-size:16px; margin:16px; }
+  .back { margin:8px 12px 0; }
+
+  /* プレイヤー */
+  #player { position:fixed; bottom:0; left:0; right:0; background:var(--panel); padding:10px 12px; border-top:1px solid var(--line); }
+  .row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  #now { flex:1; min-width:0; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #mode, #next { padding:8px 10px; font-size:13px; }
   audio { width:100%; }
 </style>
 </head>
 <body>
 <header>
   <form id="f">
-    <input id="q" placeholder="曲名・アーティスト名で検索" autocomplete="off">
+    <input id="q" placeholder="曲名・アーティスト名で検索" autocomplete="off" enterkeyhint="search">
     <button type="submit">検索</button>
   </form>
 </header>
-<div id="status"></div>
-<ul id="list"></ul>
+
+<main>
+  <section id="v-home">
+    <div id="status" class="status"></div>
+    <ul id="list"></ul>
+  </section>
+
+  <section id="v-detail" class="hidden">
+    <div class="back"><button class="ghost" id="back">← 戻る</button></div>
+    <div class="hero">
+      <img id="d-thumb" alt="">
+      <div class="info">
+        <h1 id="d-title"></h1>
+        <p id="d-channel" class="sub"></p>
+        <p id="d-meta" class="sub"></p>
+        <div class="actions">
+          <button id="d-play" disabled>▶ 再生</button>
+          <button id="d-all" class="ghost" disabled>関連曲もまとめて再生</button>
+        </div>
+      </div>
+    </div>
+    <div id="d-desc" class="desc collapsed"></div>
+    <button id="d-more" class="ghost more hidden">もっと見る</button>
+    <h2>似た曲</h2>
+    <div id="d-status" class="status"></div>
+    <ul id="d-related"></ul>
+  </section>
+</main>
+
 <div id="player">
-  <div id="now">再生していません</div>
+  <div class="row">
+    <div id="now">再生していません</div>
+    <div id="spin" class="spin hidden"></div>
+    <button id="next" class="ghost" title="次の曲">⏭</button>
+    <button id="mode" class="ghost"></button>
+  </div>
   <audio id="audio" controls preload="none"></audio>
 </div>
 
 <script>
 const $ = s => document.querySelector(s);
 const audio = $("#audio");
-let results = [];
-let current = -1;
-let retries = 0;
 
-function fmt(sec) {
+const MODES = [
+  ["similar", "自動: 似た曲"],
+  ["queue",   "自動: 一覧順"],
+  ["off",     "自動: オフ"],
+];
+
+const state = {
+  queue: [],                 // 再生キュー
+  idx: -1,                   // 現在の位置
+  played: new Set(),         // 再生済みID（似た曲の重複回避）
+  mode: localStorage.getItem("mode") || "similar",
+  retries: 0,
+  nextPick: null,            // 先読みした次の曲 { forId, track }
+};
+
+const known = new Map();     // id -> 曲情報（表示の高速化用）
+const warmed = new Set();    // 先読み済みID
+const searchMemo = new Map();// 検索結果のブラウザ側キャッシュ
+let searchSeq = 0;
+let detailSeq = 0;
+let detailTrack = null;
+let detailRelated = [];
+
+const fmt = sec => {
   if (sec == null) return "";
   const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
+};
+const fmtDate = d => (d && d.length === 8) ? `${d.slice(0,4)}/${d.slice(4,6)}/${d.slice(6,8)}` : "";
+const fmtNum = n => (n == null ? "" : n.toLocaleString("ja-JP"));
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error((await r.text()) || String(r.status));
+  return r.json();
 }
 
-$("#f").addEventListener("submit", async e => {
-  e.preventDefault();
-  const q = $("#q").value.trim();
-  if (!q) return;
-  $("#status").textContent = "検索中…";
-  $("#list").innerHTML = "";
-  try {
-    const r = await fetch("/api/search?q=" + encodeURIComponent(q) + "&n=25");
-    if (!r.ok) throw new Error(await r.text());
-    results = await r.json();
-    $("#status").textContent = results.length ? "" : "見つかりませんでした";
-    render();
-  } catch (err) {
-    $("#status").textContent = "検索に失敗: " + err.message;
-  }
-});
+// 音声URLを事前に解決してサーバーのキャッシュに入れる
+function warm(id) {
+  if (!id || warmed.has(id)) return;
+  warmed.add(id);
+  setTimeout(() => warmed.delete(id), 15 * 60 * 1000);
+  fetch("/api/resolve/" + id).catch(() => warmed.delete(id));
+}
 
-function render() {
+function setStatus(text) { $("#status").textContent = text; }
+function setNow(text) { $("#now").textContent = text; }
+function setBuffering(on) { $("#spin").classList.toggle("hidden", !on); }
+function setSk(el, text, loading) {
+  el.textContent = text ?? "";
+  el.classList.toggle("sk", !!loading);
+}
+
+/* ---------- 一覧 ---------- */
+
+function showSkeleton(n = 8) {
   const ul = $("#list");
   ul.innerHTML = "";
-  results.forEach((t, i) => {
+  for (let i = 0; i < n; i++) {
     const li = document.createElement("li");
-    if (i === current) li.className = "active";
-
-    const img = document.createElement("img");
-    img.loading = "lazy";
-    img.src = t.thumbnail;
-
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    const title = document.createElement("div");
-    title.className = "title";
-    title.textContent = t.title;
-    const sub = document.createElement("div");
-    sub.className = "sub";
-    sub.textContent = `${t.channel ?? ""} ・ ${fmt(t.duration)}`;
-    meta.append(title, sub);
-
-    li.append(img, meta);
-    li.onclick = () => play(i);
+    li.innerHTML = '<div class="sk sk-thumb"></div><div style="flex:1;min-width:0"><div class="sk" style="height:14px;margin-bottom:8px"></div><div class="sk" style="height:12px;width:50%"></div></div>';
     ul.appendChild(li);
+  }
+}
+
+function trackItem(t, i, onClick) {
+  const li = document.createElement("li");
+  li.className = "enter";
+  li.dataset.id = t.id;
+  li.style.animationDelay = Math.min(i * 30, 300) + "ms";
+
+  const img = document.createElement("img");
+  img.loading = "lazy";
+  img.alt = "";
+  img.src = t.thumbnail;
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  const title = document.createElement("div");
+  title.className = "title";
+  title.textContent = t.title;
+  const sub = document.createElement("div");
+  sub.className = "sub";
+  sub.textContent = `${t.channel ?? ""} ・ ${fmt(t.duration)}`;
+  meta.append(title, sub);
+
+  const info = document.createElement("button");
+  info.className = "info-btn";
+  info.textContent = "ⓘ";
+  info.title = "詳細";
+  info.onclick = e => { e.stopPropagation(); location.hash = "#/t/" + t.id; };
+
+  li.append(img, meta, info);
+  li.onclick = () => onClick(i);
+  li.addEventListener("pointerdown", () => warm(t.id), { passive: true });
+  return li;
+}
+
+function renderList(list) {
+  const ul = $("#list");
+  ul.innerHTML = "";
+  setStatus(list.length ? "" : "見つかりませんでした");
+  list.forEach(t => known.set(t.id, t));
+  list.forEach((t, i) => {
+    ul.appendChild(trackItem(t, i, idx => {
+      state.queue = list.slice();
+      playIdx(idx);
+    }));
+  });
+  markActive();
+}
+
+function markActive() {
+  const id = state.queue[state.idx]?.id;
+  document.querySelectorAll("li[data-id]").forEach(li => {
+    li.classList.toggle("active", li.dataset.id === id);
   });
 }
 
-function load(i) {
-  const t = results[i];
-  $("#now").textContent = t.title;
-  audio.src = `/stream/${t.id}`;
-  audio.play().catch(() => {});
-}
+/* ---------- 検索 ---------- */
 
-function play(i) {
-  current = i;
-  retries = 0;
-  load(i);
-
-  if ("mediaSession" in navigator) {
-    const t = results[i];
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: t.title,
-      artist: t.channel ?? "",
-      artwork: [{ src: t.thumbnail }],
-    });
-    navigator.mediaSession.setActionHandler("nexttrack", () => {
-      if (current < results.length - 1) play(current + 1);
-    });
-    navigator.mediaSession.setActionHandler("previoustrack", () => {
-      if (current > 0) play(current - 1);
-    });
-  }
-  render();
-}
-
-audio.addEventListener("ended", () => {
-  if (current < results.length - 1) play(current + 1);
+$("#f").addEventListener("submit", e => {
+  e.preventDefault();
+  const q = $("#q").value.trim();
+  if (!q) return;
+  location.hash = "#/";
+  search(q);
 });
+
+async function search(q) {
+  const seq = ++searchSeq;
+  const key = q.toLowerCase();
+
+  if (searchMemo.has(key)) {
+    renderList(searchMemo.get(key));
+    return;
+  }
+
+  $("#list").innerHTML = "";
+  showSkeleton();
+  setStatus("検索中…");
+
+  try {
+    const list = await getJSON("/api/search?q=" + encodeURIComponent(q) + "&n=25");
+    if (seq !== searchSeq) return;          // 古い検索結果は捨てる
+    searchMemo.set(key, list);
+    renderList(list);
+  } catch (err) {
+    if (seq !== searchSeq) return;
+    $("#list").innerHTML = "";
+    setStatus("検索に失敗: " + err.message);
+  }
+}
+
+/* ---------- ルーティング（ホーム / 詳細） ---------- */
+
+function route() {
+  const m = location.hash.match(/^#\/t\/([\w-]{6,})/);
+  if (m) showDetail(m[1]);
+  else showHome();
+}
+
+function showHome() {
+  $("#v-home").classList.remove("hidden");
+  $("#v-detail").classList.add("hidden");
+}
+
+async function showDetail(id) {
+  $("#v-home").classList.add("hidden");
+  $("#v-detail").classList.remove("hidden");
+  window.scrollTo(0, 0);
+
+  const seq = ++detailSeq;
+  const base = known.get(id) ?? { id, title: "", channel: "", thumbnail: `https://i.ytimg.com/vi/${id}/mqdefault.jpg` };
+
+  // 既に知っている情報で先に描画して、体感の待ち時間を減らす
+  detailTrack = null;
+  detailRelated = [];
+  fillDetail(base, true);
+  $("#d-related").innerHTML = "";
+  $("#d-status").textContent = "読み込み中…";
+
+  try {
+    const [info, rel] = await Promise.all([
+      getJSON("/api/track/" + id),
+      getJSON("/api/related/" + id),
+    ]);
+    if (seq !== detailSeq) return;
+
+    known.set(id, info);
+    detailTrack = info;
+    detailRelated = rel;
+    fillDetail(info, false);
+    renderRelated(rel);
+    $("#d-status").textContent = rel.length ? "" : "似た曲が見つかりませんでした";
+  } catch (err) {
+    if (seq !== detailSeq) return;
+    $("#d-status").textContent = "読み込みに失敗: " + err.message;
+  }
+}
+
+function fillDetail(t, loading) {
+  $("#d-thumb").src = t.thumbnail || "";
+  setSk($("#d-title"), t.title || "", loading);
+  setSk($("#d-channel"), t.channel || "", loading);
+
+  const meta = [
+    fmtDate(t.upload_date),
+    t.duration != null && `長さ ${fmt(t.duration)}`,
+    t.view_count != null && `再生 ${fmtNum(t.view_count)}回`,
+    t.like_count != null && `高評価 ${fmtNum(t.like_count)}`,
+  ].filter(Boolean).join(" ・ ");
+  $("#d-meta").textContent = loading ? "" : meta;
+
+  const desc = $("#d-desc");
+  desc.textContent = loading ? "" : (t.description || "");
+  desc.classList.add("collapsed");
+  const more = $("#d-more");
+  more.textContent = "もっと見る";
+  more.classList.toggle("hidden", loading || (t.description || "").length < 150);
+
+  $("#d-play").disabled = loading;
+  $("#d-all").disabled = loading;
+}
+
+function renderRelated(rel) {
+  const ul = $("#d-related");
+  ul.innerHTML = "";
+  rel.forEach(t => known.set(t.id, t));
+  rel.forEach((t, i) => {
+    ul.appendChild(trackItem(t, i, idx => {
+      state.queue = rel.slice();
+      playIdx(idx);
+    }));
+  });
+  markActive();
+}
+
+$("#back").onclick = () => { history.length > 1 ? history.back() : (location.hash = "#/"); };
+$("#d-more").onclick = () => {
+  const desc = $("#d-desc");
+  const open = desc.classList.toggle("collapsed") === false;
+  $("#d-more").textContent = open ? "閉じる" : "もっと見る";
+};
+$("#d-play").onclick = () => {
+  if (!detailTrack) return;
+  state.queue = [detailTrack];
+  playIdx(0);
+};
+$("#d-all").onclick = () => {
+  if (!detailTrack) return;
+  state.queue = [detailTrack, ...detailRelated];
+  playIdx(0);
+};
+
+/* ---------- 再生 ---------- */
+
+function playIdx(i) {
+  const t = state.queue[i];
+  if (!t) return;
+  state.idx = i;
+  state.retries = 0;
+  state.nextPick = null;
+  state.played.add(t.id);
+  known.set(t.id, t);
+
+  setNow(t.title);
+  setBuffering(true);
+  audio.src = "/stream/" + t.id;
+  audio.play().catch(() => {});
+
+  setMediaSession(t);
+  markActive();
+  prefetchNext();
+}
+
+// 似た曲の候補を1つ選ぶ（再生済みは避ける）
+async function pickSimilar() {
+  const cur = state.queue[state.idx];
+  if (!cur) return null;
+  const rel = await getJSON("/api/related/" + cur.id);
+  return rel.find(t => !state.played.has(t.id)) ?? rel[0] ?? null;
+}
+
+// 次の曲を先に解決して、切り替えを速くする
+async function prefetchNext() {
+  const cur = state.queue[state.idx];
+  if (!cur || state.mode === "off") return;
+
+  if (state.queue[state.idx + 1] && state.mode === "queue") {
+    warm(state.queue[state.idx + 1].id);
+    return;
+  }
+  try {
+    const pick = await pickSimilar();
+    if (pick && state.queue[state.idx]?.id === cur.id) {
+      state.nextPick = { forId: cur.id, track: pick };
+      warm(pick.id);
+    }
+  } catch { /* 先読みの失敗は無視 */ }
+}
+
+// 次へ進む（手動 or 曲の終了時）
+async function advance(manual) {
+  if (!manual && state.mode === "off") return;
+
+  if ((state.mode === "queue" || manual) && state.queue[state.idx + 1]) {
+    playIdx(state.idx + 1);
+    return;
+  }
+
+  const cur = state.queue[state.idx];
+  if (!cur) return;
+
+  // 先読み済みの候補があれば使う
+  if (state.nextPick && state.nextPick.forId === cur.id && !state.played.has(state.nextPick.track.id)) {
+    const t = state.nextPick.track;
+    state.queue.push(t);
+    playIdx(state.queue.length - 1);
+    return;
+  }
+
+  setBuffering(true);
+  setNow("似た曲を探しています…");
+  try {
+    const t = await pickSimilar();
+    if (!t) {
+      setBuffering(false);
+      setNow("次の曲が見つかりませんでした");
+      return;
+    }
+    state.queue.push(t);
+    playIdx(state.queue.length - 1);
+  } catch (err) {
+    setBuffering(false);
+    setNow("似た曲の取得に失敗: " + err.message);
+  }
+}
+
+function setMediaSession(t) {
+  if (!("mediaSession" in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: t.title,
+    artist: t.channel ?? "",
+    artwork: [{ src: t.thumbnail }],
+  });
+  navigator.mediaSession.setActionHandler("nexttrack", () => advance(true));
+  navigator.mediaSession.setActionHandler("previoustrack", () => {
+    if (state.idx > 0) playIdx(state.idx - 1);
+  });
+}
+
+audio.addEventListener("loadstart", () => setBuffering(true));
+audio.addEventListener("waiting", () => setBuffering(true));
+audio.addEventListener("canplay", () => setBuffering(false));
+audio.addEventListener("playing", () => setBuffering(false));
+
+audio.addEventListener("ended", () => advance(false));
 
 audio.addEventListener("error", () => {
+  const t = state.queue[state.idx];
+  if (!t) return;
   // 署名URLが失効した可能性があるので1回だけ取り直す
-  if (current >= 0 && retries < 1) {
-    retries++;
-    load(current);
+  if (state.retries < 1) {
+    state.retries++;
+    audio.src = "/stream/" + t.id;
+    audio.play().catch(() => {});
   } else {
-    $("#now").textContent += "（再生エラー）";
+    setBuffering(false);
+    setNow(t.title + "（再生エラー）");
   }
 });
+
+$("#next").onclick = () => advance(true);
+
+$("#mode").onclick = () => {
+  const i = MODES.findIndex(m => m[0] === state.mode);
+  state.mode = MODES[(i + 1) % MODES.length][0];
+  localStorage.setItem("mode", state.mode);
+  applyMode();
+  prefetchNext();
+};
+
+function applyMode() {
+  const m = MODES.find(x => x[0] === state.mode) ?? MODES[0];
+  $("#mode").textContent = m[1];
+}
+
+/* ---------- 起動 ---------- */
+
+applyMode();
+window.addEventListener("hashchange", route);
+route();
 </script>
 </body>
 </html>
